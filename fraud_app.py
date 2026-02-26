@@ -1,54 +1,143 @@
 import streamlit as st
 import joblib
-import re
-import nltk
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
+import pandas as pd
+import numpy as np
 from scipy.sparse import hstack, csr_matrix
 
+# ==============================
+# Load Model Package
+# ==============================
 
-nltk.download('stopwords')
-nltk.download('wordnet')
+model_package = joblib.load("fraud_detection_model.pkl")
 
+svm_model = model_package["svm_model"]
+tfidf = model_package["tfidf"]
+encoder = model_package["encoder"]
+threshold = model_package["threshold"]
 
-# load assets
-model = joblib.load("fraud_model.pkl")
-tfidf = joblib.load("tfidf.pkl")
+# ==============================
+# Define Columns
+# ==============================
 
-stop_words = set(stopwords.words("english"))
-lemmatizer = WordNetLemmatizer()
+cat_cols = [
+    "employment_type",
+    "required_experience",
+    "required_education",
+    "industry",
+    "function"
+]
 
+meta_cols = [
+    "telecommuting",
+    "has_company_logo",
+    "has_questions",
+    "salary_provided",
+    "location_missing",
+    "company_profile_missing",
+    "has_benefits"
+]
+
+# ==============================
+# Text Cleaning Function
+# (Use SAME cleaning as training)
+# ==============================
+
+import re
 def clean_text(text):
-    text = text.lower()
-    text = re.sub(r'<.*?>','',text)
-    text = re.sub(r'http\S+|www\S+','',text)
-    text = re.sub(r'[^a-z\s]', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
-    words = [lemmatizer.lemmatize(w) for w in text.split() if w not in stop_words]
-    return " ".join(words)
+    text = str(text).lower()
+    text = re.sub(r"[^a-zA-Z0-9 ]", "", text)
+    return text
 
-st.title("🕵️ Job Fraud Detection System")
+# ==============================
+# Streamlit UI
+# ==============================
 
-text = st.text_area("Paste job description")
+st.title("🚨 Job Fraud Detection System")
+st.write("Enter job details below to check if it is Fraud or Real.")
 
-tele = st.checkbox("Telecommuting")
-logo = st.checkbox("Has company logo")
-ques = st.checkbox("Has screening questions")
-salary = st.checkbox("Salary provided")
+# Text Inputs
+title = st.text_input("Job Title")
+description = st.text_area("Job Description")
+requirements = st.text_area("Requirements")
+company_profile = st.text_area("Company Profile")
+benefits = st.text_area("Benefits")
+location = st.text_input("Location")
+
+# Dropdown Inputs
+employment_type = st.selectbox("Employment Type", ["Full-time", "Part-time", "Contract", "Temporary", "Other"])
+required_experience = st.selectbox("Experience Level", ["Entry level", "Mid level", "Senior level", "Director", "Executive"])
+required_education = st.selectbox("Education Level", ["High School", "Bachelor's Degree", "Master's Degree", "PhD", "Other"])
+industry = st.text_input("Industry")
+function = st.text_input("Function")
+
+# Binary Meta Inputs
+telecommuting = st.selectbox("Telecommuting", [0, 1])
+has_company_logo = st.selectbox("Company Logo Provided", [0, 1])
+has_questions = st.selectbox("Has Screening Questions", [0, 1])
+salary_provided = st.selectbox("Salary Provided", [0, 1])
+
+# ==============================
+# Prediction Button
+# ==============================
 
 if st.button("Check Fraud"):
 
-    cleaned = clean_text(text)
-    X_text = tfidf.transform([cleaned])
+    new_job = {
+        "title": title,
+        "description": description,
+        "requirements": requirements,
+        "company_profile": company_profile,
+        "benefits": benefits,
+        "employment_type": employment_type,
+        "required_experience": required_experience,
+        "required_education": required_education,
+        "industry": industry,
+        "function": function,
+        "location": location
+    }
 
-    meta = [[int(tele), int(logo), int(ques), int(salary)]]
-    meta_sparse = csr_matrix(meta)
+    new_df = pd.DataFrame([new_job])
 
-    X_final = hstack([X_text, meta_sparse])
+    # Combine text
+    text_columns = ["title", "description", "requirements"]
+    new_df["combined_text_raw"] = new_df[text_columns].fillna("").agg(" ".join, axis=1)
+    new_df["clean_text"] = new_df["combined_text_raw"].apply(clean_text)
 
-    prob = model.predict_proba(X_final)[0][1]
+    # TFIDF
+    X_text = tfidf.transform(new_df["clean_text"])
 
-    if prob > 0.45:
-        st.error(f"🚨 Likely Fraudulent ({prob:.2f})")
+    # Handle categorical
+    for col in cat_cols:
+        if col not in new_df.columns:
+            new_df[col] = "Unknown"
+        else:
+            new_df[col] = new_df[col].fillna("Unknown")
+
+    X_cat = encoder.transform(new_df[cat_cols])
+
+    # Meta Features
+    new_df["telecommuting"] = telecommuting
+    new_df["has_company_logo"] = has_company_logo
+    new_df["has_questions"] = has_questions
+    new_df["salary_provided"] = salary_provided
+    new_df["location_missing"] = 0 if location else 1
+    new_df["company_profile_missing"] = 0 if company_profile else 1
+    new_df["has_benefits"] = 0 if benefits else 1
+
+    X_meta = csr_matrix(new_df[meta_cols].values)
+
+    # Combine
+    X_final = hstack([X_text, X_cat, X_meta])
+
+    # Predict
+    probability = svm_model.predict_proba(X_final)[:, 1][0]
+    prediction = 1 if probability >= threshold else 0
+
+    st.subheader("Result")
+
+    st.write("Fraud Probability:", round(probability, 4))
+
+    if prediction == 1:
+        st.error("⚠️ This Job Posting is Likely FRAUD")
     else:
-        st.success(f"✅ Likely Genuine ({1-prob:.2f})")
+        st.success("✅ This Job Posting Appears Legitimate")
