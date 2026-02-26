@@ -8,12 +8,11 @@ from scipy.sparse import hstack, csr_matrix
 # Load Model Package
 # ==============================
 
-model_package = joblib.load("fraud_detection_model.pkl")
+import joblib
 
-svm_model = model_package["svm_model"]
-tfidf = model_package["tfidf"]
-encoder = model_package["encoder"]
-threshold = model_package["threshold"]
+tfidf = joblib.load("tfidf_vectorizer.pkl")
+encoder = joblib.load("onehot_encoder.pkl")
+svm_model = joblib.load("linear_svm_model.pkl")
 
 # ==============================
 # Define Columns
@@ -141,3 +140,4 @@ if st.button("Check Fraud"):
         st.error("⚠️ This Job Posting is Likely FRAUD")
     else:
         st.success("✅ This Job Posting Appears Legitimate")
+
