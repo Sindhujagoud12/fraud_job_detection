@@ -44,10 +44,28 @@ meta_cols = [
 # ==============================
 
 import re
+import nltk
+from nltk.corpus import stopwords
+from nltk.stem import WordNetLemmatizer
+
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+stop_words = set(stopwords.words("english"))
+lemmatizer = WordNetLemmatizer()
+
 def clean_text(text):
     text = str(text).lower()
-    text = re.sub(r"[^a-zA-Z0-9 ]", "", text)
-    return text
+    text = re.sub(r"http\S+", "", text)
+    text = re.sub(r"[^a-z\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    words = []
+    for word in text.split():
+        if word not in stop_words and len(word) > 2:
+            words.append(lemmatizer.lemmatize(word))
+
+    return " ".join(words)
 
 # ==============================
 # Streamlit UI
@@ -142,5 +160,6 @@ if st.button("Check Fraud"):
         st.error("⚠️ This Job Posting is Likely FRAUD")
     else:
         st.success("✅ This Job Posting Appears Legitimate")
+
 
 
