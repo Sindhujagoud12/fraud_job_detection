@@ -11,7 +11,7 @@ from scipy.sparse import hstack, csr_matrix
 import joblib
 model_package = joblib.load("fraud_detection_model.pkl")
 
-svm_model = model_package["svm_model"]
+model = model_package["model"]
 tfidf = model_package["tfidf"]
 encoder = model_package["encoder"]
 threshold = model_package["threshold"]   
@@ -149,7 +149,7 @@ if st.button("Check Fraud"):
     X_final = hstack([X_text, X_cat, X_meta])
 
     # Predict
-    probability = svm_model.predict_proba(X_final)[:, 1][0]
+    probability = model.predict_proba(X_final)[:, 1][0]
     prediction = 1 if probability >= threshold else 0
 
     st.subheader("Result")
@@ -160,6 +160,7 @@ if st.button("Check Fraud"):
         st.error("⚠️ This Job Posting is Likely FRAUD")
     else:
         st.success("✅ This Job Posting Appears Legitimate")
+
 
 
 
